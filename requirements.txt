@@ -1,0 +1,9 @@
+streamlit>=1.28.0
+langchain>=0.1.0
+langchain-ollama>=0.0.6
+langchain-community>=0.0.20
+chromadb>=0.4.0
+pymysql>=1.1.0
+pandas>=2.0.0
+plotly>=5.18.0
+python-dotenv>=1.0.0

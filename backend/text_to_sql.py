@@ -90,14 +90,17 @@ def generate_sql(question: str, schema_string: str | None = None) -> str:
 def _extract_sql(text: str) -> str:
     """Try to extract a single SELECT statement from LLM output (e.g. remove markdown)."""
     text = text.strip()
-    # Remove markdown code block if present
     if "```" in text:
         parts = text.split("```")
         for p in parts:
             p = p.strip()
+            # Strip optional language tag (e.g. "sql\n..." -> "SELECT ...")
+            if "\n" in p:
+                first_line, rest = p.split("\n", 1)
+                if not first_line.upper().startswith("SELECT"):
+                    p = rest.strip()
             if p.upper().startswith("SELECT"):
                 return _fix_bare_alias_joins(p)
-    # Use as-is if it looks like SQL
     if text.upper().startswith("SELECT"):
         return _fix_bare_alias_joins(text)
     return text

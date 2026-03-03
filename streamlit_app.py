@@ -98,10 +98,28 @@ def _render_result(result: dict, question: str):
 
 # ── Page config ───────────────────────────────────────────────────────────
 st.set_page_config(page_title="Healthcare AI Assistant", layout="wide")
-st.title("Healthcare AI Assistant")
-st.caption("Ask questions in plain English. Follow-up questions use conversation context.")
-if DEMO_MODE:
-    st.info("Demo mode: using mock data (no MySQL/Ollama). Set DEMO_MODE=0 and configure .env for real data.")
+
+# Sticky header that stays visible when chat history scrolls.
+st.markdown(
+    """
+    <style>
+    div[data-testid="stAppViewBlockContainer"] > div:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background: var(--background-color, white);
+        padding-bottom: 0.25rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.container():
+    st.title("Healthcare AI Assistant")
+    st.caption("Ask questions in plain English. Follow-up questions use conversation context.")
+    if DEMO_MODE:
+        st.info("Demo mode: using mock data (no MySQL/Ollama). Set DEMO_MODE=0 and configure .env for real data.")
 
 # ── Session state ─────────────────────────────────────────────────────────
 if "session_id" not in st.session_state:

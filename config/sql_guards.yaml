@@ -1,0 +1,58 @@
+# SQL post-generation guards.
+#
+# Each rule is checked AFTER the LLM generates SQL.  When both
+# `question_match` triggers AND every `sql_must_have` / `sql_must_not_have`
+# condition is violated, the generated SQL is replaced with `fallback_sql`.
+#
+# Fields
+# ------
+# name            – human-readable label (for logging).
+# question_match  – the question must satisfy ALL of:
+#     any_of      – at least one phrase must appear (case-insensitive).
+#     also_any_of – (optional) at least one of these must also appear.
+# sql_bad_when    – the generated SQL is considered wrong when ALL hold:
+#     all_present     – every keyword must appear (case-insensitive).
+#     any_missing     – at least one of these keywords is absent.
+# fallback_sql    – list of {when, sql} pairs checked top-to-bottom.
+#     when            – phrase that must appear in the question (case-insensitive);
+#                       use "*" as a catch-all default.
+#     sql             – replacement SELECT statement.
+
+guards:
+  - name: admissions_in_period
+    description: >
+      "Admitted last week/month" must query visits with a date filter,
+      not an appointments+visits join without one.
+    question_match:
+      any_of:
+        - admitted
+        - admission
+      also_any_of:
+        - last week
+        - past week
+        - last 7 days
+        - past 7 days
+        - last month
+        - past month
+        - last 30 days
+        - yesterday
+    sql_bad_when:
+      all_present:
+        - APPOINTMENTS
+        - VISITS
+        - JOIN
+        - COUNT
+      any_missing:
+        - VISIT_DATE
+        - DATE_SUB
+    fallback_sql:
+      - when: last month
+        sql: "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+      - when: past month
+        sql: "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+      - when: last 30 days
+        sql: "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+      - when: yesterday
+        sql: "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)"
+      - when: "*"
+        sql: "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"

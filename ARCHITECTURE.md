@@ -10,6 +10,7 @@ A **fully local, privacy-first text-to-SQL assistant** for healthcare staff. Use
 healthcare-ai/
 ├── backend/
 │   ├── text_to_sql.py     # LangChain + Ollama: NL question -> SELECT statement
+│   ├── sql_guards.py      # Data-driven post-generation SQL correction engine
 │   ├── sql_executor.py    # Validates read-only, executes against MySQL
 │   ├── schema.py          # Introspects MySQL schema (no row data sent to LLM)
 │   ├── result_metadata.py # Infers result_type (table/kpi/bar/line) from data shape
@@ -17,7 +18,8 @@ healthcare-ai/
 │   ├── cache.py           # Two-tier cache + demo mode + audit integration
 │   └── audit.py           # JSONL audit log (no PII)
 ├── config/
-│   └── settings.py        # All config from .env with typed defaults
+│   ├── settings.py        # All config from .env with typed defaults
+│   └── sql_guards.yaml    # Declarative SQL post-generation guard rules
 ├── docker/mysql/
 │   ├── 01-init.sql        # Schema: departments, patients, appointments, visits
 │   ├── 02-readonly-user.sql
@@ -138,10 +140,10 @@ flowchart TD
 - **Benefit:** One-command setup (`docker compose up -d`). MySQL auto-seeds, health checks ensure ordering. Ollama persists models in a named volume.
 - **Tradeoff:** Ollama models must be pulled separately after first start. The app container depends on Ollama being "started" (not "healthy with models loaded"), so first query may fail if models aren't ready.
 
-### 8. Post-generation SQL guard (hardcoded overrides)
+### 8. Data-driven SQL guards (`config/sql_guards.yaml`)
 
-- **Benefit:** Catches the most common LLM mistake (confusing appointments vs visits for "admitted" queries) with deterministic correctness.
-- **Tradeoff:** Doesn't scale. Each new override is hand-coded. As the schema grows, this pattern becomes brittle.
+- **Benefit:** Post-generation rules that catch known LLM mistakes are defined in YAML, not code. Adding a new guard means adding a block to the YAML file -- no Python changes required. Each rule declares: question patterns to match, SQL patterns that indicate a bad query, and fallback SQL variants keyed by question phrases.
+- **Tradeoff:** YAML rules are still pattern-matched strings, not full semantic understanding. Complex conditions may outgrow the current `all_present` / `any_missing` vocabulary and require extending the guard engine.
 
 ---
 

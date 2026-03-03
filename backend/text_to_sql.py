@@ -7,6 +7,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
 from backend.schema import get_schema_string
+from backend.sql_guards import apply_guards
 from config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
 
 
@@ -81,11 +82,8 @@ def generate_sql(question: str, schema_string: str | None = None) -> str:
     # Chain expects two inputs; we pass same question for both slots and override schema in prompt
     # Actually our prompt has {schema} and {question} - so we need to invoke with dict
     result = chain.invoke({"schema": schema_string, "question": question})
-    # Extract only the SQL (in case LLM adds markdown or explanation)
     sql = _extract_sql(result)
-    # Override: "admitted last week" etc. must use visits + visit_date, not appointments join
-    if _is_admitted_in_period_question(question) and _is_wrong_admissions_sql(sql):
-        sql = _sql_for_admitted_last_week(question)
+    sql = apply_guards(question, sql)
     return sql
 
 
@@ -129,30 +127,3 @@ def _fix_bare_alias_joins(sql: str) -> str:
     return sql
 
 
-def _is_admitted_in_period_question(question: str) -> bool:
-    """True if question is asking how many patients were admitted in a time window."""
-    q = question.lower()
-    if "admitted" not in q and "admission" not in q:
-        return False
-    time_phrases = ("last week", "past week", "last 7 days", "past 7 days",
-                    "last month", "past month", "last 30 days", "yesterday")
-    return any(p in q for p in time_phrases)
-
-
-def _is_wrong_admissions_sql(sql: str) -> bool:
-    """True if SQL counts via appointments+visits join instead of visits with date filter."""
-    sql_upper = sql.upper()
-    # Wrong: joins appointments and visits for a count (no visit_date time filter)
-    has_join = "APPOINTMENTS" in sql_upper and "VISITS" in sql_upper and ("JOIN" in sql_upper or "INNER JOIN" in sql_upper)
-    has_count = "COUNT" in sql_upper
-    missing_date_filter = "VISIT_DATE" not in sql_upper or ("DATE_SUB" not in sql_upper and "INTERVAL" not in sql_upper)
-    return has_join and has_count and missing_date_filter
-
-
-def _sql_for_admitted_last_week(question: str) -> str:
-    """Return correct SQL for 'how many patients admitted in [period]'."""
-    q = question.lower()
-    if "last month" in q or "past month" in q or "last 30 days" in q:
-        return "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
-    # Default: last week / past 7 days
-    return "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"

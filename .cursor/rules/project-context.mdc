@@ -1,0 +1,29 @@
+---
+description: Project context for Healthcare AI Assistant. Use when working anywhere in this repo so the LLM keeps architecture and conventions in context.
+globs: ["**/*.py", "**/*.md", "**/.env.example", "**/requirements.txt"]
+alwaysApply: true
+---
+
+# Healthcare AI Assistant — Cursor project context
+
+## Purpose
+Local, privacy-first text-to-SQL for healthcare: staff ask questions in plain English; backend generates read-only SQL from schema-only context, executes, returns data with result_type; UI renders table/KPI/chart. No cloud APIs; audit on every query.
+
+## Tech stack
+- **UI:** Streamlit (`streamlit_app.py`, `run_demo.py`)
+- **Backend:** Python, LangChain, LangChain-Ollama. **DB:** MySQL read-only. **Cache:** in-memory + ChromaDB (Ollama embeddings). **Config:** `config/settings.py` + `.env`
+
+## Architecture
+1. **Text-to-SQL:** `backend/text_to_sql.py` (LangChain + Ollama, schema-only) → `backend/sql_executor.py` (validate SELECT only, execute). Schema from `backend/schema.py` (no row data to LLM).
+2. **Rich UI:** Response has `result_type` (table | kpi | bar_chart | line_chart) and `chart_config`; Streamlit renders accordingly (dataframe, metric, Plotly).
+3. **Caching:** `backend/cache.py` — generate SQL → in-memory by normalized SQL → Chroma by question embedding → on miss run_query + cache. Audit every request via `backend/audit.py` (JSONL).
+
+## Key modules
+- `backend/query.py`: `run_query(question, sql=None)` — orchestration (text_to_sql → execute → result_metadata).
+- `backend/cache.py`: `query_with_cache(question, session_id)` — cache layer + audit; when `DEMO_MODE` true returns mock responses.
+- `backend/result_metadata.py`: infers result_type and chart_config from result shape.
+- **Response shape:** `data`, `result_type`, `chart_config`, `from_cache`, `row_count`, `sql`, `error`.
+
+## Conventions
+- Imports: `from backend.xyz`, `from config.settings`. Run from repo root.
+- No PII in logs. Demo: `DEMO_MODE=1` or `python run_demo.py` (no MySQL/Ollama).

@@ -14,7 +14,15 @@ import pandas as pd
 import plotly.express as px
 
 from backend.cache import query_with_cache
+from backend.result_metadata import VALID_RESULT_TYPES, get_result_metadata
 from config.settings import DEMO_MODE
+
+_DISPLAY_LABELS: dict[str, str] = {
+    "table": "Table",
+    "kpi": "KPI Card",
+    "bar_chart": "Bar Chart",
+    "line_chart": "Line Chart",
+}
 
 
 def _format_metric_value(value):
@@ -63,8 +71,7 @@ if result.get("sql"):
         st.code(result["sql"], language="sql")
 
 data = result.get("data", [])
-result_type = result.get("result_type", "table")
-chart_config = result.get("chart_config", {})
+inferred_type = result.get("result_type", "table")
 row_count = result.get("row_count", 0)
 
 if not data:
@@ -73,19 +80,34 @@ if not data:
 
 df = pd.DataFrame(data)
 
+# --- result_type override selector ---
+display_options = [_DISPLAY_LABELS.get(t, t) for t in VALID_RESULT_TYPES]
+default_idx = list(VALID_RESULT_TYPES).index(inferred_type) if inferred_type in VALID_RESULT_TYPES else 0
+
+chosen_label = st.selectbox(
+    "Display as",
+    display_options,
+    index=default_idx,
+    key=f"result_type_override_{question}",
+)
+chosen_type = VALID_RESULT_TYPES[display_options.index(chosen_label)]
+
+result_type, chart_config = get_result_metadata(data, result_type_override=chosen_type)
+
+# --- render ---
 if result_type == "kpi":
     label = df.columns[0]
     value = _format_metric_value(df.iloc[0, 0])
     st.metric(label=label, value=value)
 elif result_type == "bar_chart":
     x_col = chart_config.get("x_column", df.columns[0])
-    y_col = chart_config.get("y_column", df.columns[1])
+    y_col = chart_config.get("y_column", df.columns[min(1, len(df.columns) - 1)])
     title = chart_config.get("title", f"{y_col} by {x_col}")
     fig = px.bar(df, x=x_col, y=y_col, title=title)
     st.plotly_chart(fig, use_container_width=True)
 elif result_type == "line_chart":
     x_col = chart_config.get("x_column", df.columns[0])
-    y_col = chart_config.get("y_column", df.columns[1])
+    y_col = chart_config.get("y_column", df.columns[min(1, len(df.columns) - 1)])
     title = chart_config.get("title", f"{y_col} over {x_col}")
     fig = px.line(df, x=x_col, y=y_col, title=title)
     st.plotly_chart(fig, use_container_width=True)

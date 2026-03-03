@@ -1,4 +1,6 @@
 """Text-to-SQL using LangChain + Ollama. LLM receives only schema string (no row data)."""
+import re
+
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -13,6 +15,7 @@ Rules:
 - Output only a single valid SELECT statement. No other text.
 - Do not use INSERT, UPDATE, DELETE, DROP, ALTER, or any other write operations.
 - You have access only to the following schema. Use only these tables and columns.
+- ALWAYS use full table names in FROM and JOIN clauses (e.g. JOIN departments d, not JOIN d). An alias alone is not a table name.
 
 Schema:
 {schema}
@@ -23,6 +26,7 @@ Semantics:
 - "Appointments" = scheduled future or past appointments (appointments table, scheduled_at). Do not use appointments for "how many admitted" unless the question explicitly asks about appointments.
 - Department names are ONLY in departments.name. To get a department name from visits or appointments, JOIN on department_id = departments.id.
 - Patient names are in patients.first_name and patients.last_name. To get a patient name from visits or appointments, JOIN on patient_id = patients.id.
+- "By department" or "per department" means GROUP BY departments.name after JOINing visits to departments.
 
 Examples:
 Question: How many patients were admitted last week?
@@ -30,6 +34,9 @@ SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDA
 
 Question: What department did Jane Doe visit?
 SELECT DISTINCT d.name FROM visits v JOIN patients p ON v.patient_id = p.id JOIN departments d ON v.department_id = d.id WHERE p.first_name = 'Jane' AND p.last_name = 'Doe';
+
+Question: Show admissions by department
+SELECT d.name AS department, COUNT(*) AS admissions FROM visits v JOIN departments d ON v.department_id = d.id GROUP BY d.name;
 """
 
 USER_PROMPT = """Question: {question}"""
@@ -91,11 +98,35 @@ def _extract_sql(text: str) -> str:
         for p in parts:
             p = p.strip()
             if p.upper().startswith("SELECT"):
-                return p
+                return _fix_bare_alias_joins(p)
     # Use as-is if it looks like SQL
     if text.upper().startswith("SELECT"):
-        return text
+        return _fix_bare_alias_joins(text)
     return text
+
+
+_TABLE_ALIASES: dict[str, str] = {
+    "d": "departments",
+    "p": "patients",
+    "v": "visits",
+    "a": "appointments",
+    "dept": "departments",
+    "pat": "patients",
+    "vis": "visits",
+    "appt": "appointments",
+}
+
+
+def _fix_bare_alias_joins(sql: str) -> str:
+    """Replace ``JOIN d ON`` with ``JOIN departments d ON`` when the LLM uses an alias as a table name."""
+    for alias, table in _TABLE_ALIASES.items():
+        sql = re.sub(
+            rf'\bJOIN\s+{re.escape(alias)}\s+ON\b',
+            f'JOIN {table} {alias} ON',
+            sql,
+            flags=re.IGNORECASE,
+        )
+    return sql
 
 
 def _is_admitted_in_period_question(question: str) -> bool:

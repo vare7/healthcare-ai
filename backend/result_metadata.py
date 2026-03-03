@@ -3,6 +3,8 @@ from typing import Any
 
 import pandas as pd
 
+VALID_RESULT_TYPES = ("table", "kpi", "bar_chart", "line_chart")
+
 
 def _is_numeric(series: pd.Series) -> bool:
     return pd.api.types.is_numeric_dtype(series)
@@ -63,15 +65,24 @@ def _infer_chart_config(df: pd.DataFrame, result_type: str) -> dict[str, Any]:
     }
 
 
-def get_result_metadata(rows: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+def get_result_metadata(
+    rows: list[dict[str, Any]],
+    result_type_override: str | None = None,
+) -> tuple[str, dict[str, Any]]:
     """
     Given executed query rows (list of dicts), return (result_type, chart_config).
     result_type is one of: table, kpi, bar_chart, line_chart.
     chart_config has x_column, y_column, title for charts; empty dict otherwise.
+
+    If *result_type_override* is a valid type, it replaces the inferred value and
+    chart_config is rebuilt accordingly.
     """
     if not rows:
         return "table", {}
     df = pd.DataFrame(rows)
-    result_type = _infer_result_type(df)
+    if result_type_override and result_type_override in VALID_RESULT_TYPES:
+        result_type = result_type_override
+    else:
+        result_type = _infer_result_type(df)
     chart_config = _infer_chart_config(df, result_type)
     return result_type, chart_config

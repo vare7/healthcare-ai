@@ -28,6 +28,7 @@ Semantics:
 - Department names are ONLY in departments.name. To get a department name from visits or appointments, JOIN on department_id = departments.id.
 - Patient names are in patients.first_name and patients.last_name. To get a patient name from visits or appointments, JOIN on patient_id = patients.id.
 - "By department" or "per department" means GROUP BY departments.name after JOINing visits to departments.
+- When using ORDER BY with LIMIT, do NOT use DISTINCT. Instead use a plain SELECT. MySQL requires all ORDER BY columns to be in the SELECT list when DISTINCT is used.
 
 Examples:
 Question: How many patients were admitted last week?
@@ -38,6 +39,9 @@ SELECT DISTINCT d.name FROM visits v JOIN patients p ON v.patient_id = p.id JOIN
 
 Question: Show admissions by department
 SELECT d.name AS department, COUNT(*) AS admissions FROM visits v JOIN departments d ON v.department_id = d.id GROUP BY d.name;
+
+Question: Who was the most recent patient for Cardiology?
+SELECT p.first_name, p.last_name, v.visit_date FROM visits v JOIN patients p ON v.patient_id = p.id JOIN departments d ON v.department_id = d.id WHERE d.name = 'Cardiology' ORDER BY v.visit_date DESC LIMIT 1;
 
 {history_block}"""
 
@@ -98,6 +102,13 @@ def generate_sql(
     return sql
 
 
+def _post_process_sql(sql: str) -> str:
+    """Apply all post-extraction fixers to raw SQL."""
+    sql = _fix_bare_alias_joins(sql)
+    sql = _fix_distinct_order_by(sql)
+    return sql
+
+
 def _extract_sql(text: str) -> str:
     """Try to extract a single SELECT statement from LLM output (e.g. remove markdown)."""
     text = text.strip()
@@ -111,9 +122,9 @@ def _extract_sql(text: str) -> str:
                 if not first_line.upper().startswith("SELECT"):
                     p = rest.strip()
             if p.upper().startswith("SELECT"):
-                return _fix_bare_alias_joins(p)
+                return _post_process_sql(p)
     if text.upper().startswith("SELECT"):
-        return _fix_bare_alias_joins(text)
+        return _post_process_sql(text)
     return text
 
 
@@ -138,6 +149,42 @@ def _fix_bare_alias_joins(sql: str) -> str:
             sql,
             flags=re.IGNORECASE,
         )
+    return sql
+
+
+def _fix_distinct_order_by(sql: str) -> str:
+    """Remove DISTINCT when ORDER BY references columns not in the SELECT list.
+
+    MySQL error 3065: ORDER BY column not in SELECT list is incompatible with DISTINCT.
+    Dropping DISTINCT is safe for ORDER BY ... LIMIT queries (the typical "most recent" pattern).
+    """
+    upper = sql.upper()
+    if "SELECT DISTINCT" not in upper or "ORDER BY" not in upper:
+        return sql
+
+    # Extract the SELECT columns (between SELECT DISTINCT and FROM)
+    select_match = re.search(r'SELECT\s+DISTINCT\s+(.*?)\s+FROM\b', sql, re.IGNORECASE | re.DOTALL)
+    if not select_match:
+        return sql
+    select_cols = select_match.group(1).upper()
+
+    # Extract ORDER BY columns (between ORDER BY and LIMIT / end of string)
+    order_match = re.search(r'ORDER\s+BY\s+(.*?)(?:\s+LIMIT\b|;|$)', sql, re.IGNORECASE | re.DOTALL)
+    if not order_match:
+        return sql
+
+    order_expr = order_match.group(1).strip()
+    # Split on commas, strip ASC/DESC
+    order_cols = [
+        re.sub(r'\s+(ASC|DESC)\s*$', '', col.strip(), flags=re.IGNORECASE).strip()
+        for col in order_expr.split(",")
+    ]
+
+    # If any ORDER BY column is not in the SELECT list, remove DISTINCT
+    for col in order_cols:
+        if col.upper() not in select_cols:
+            return re.sub(r'\bSELECT\s+DISTINCT\b', 'SELECT', sql, count=1, flags=re.IGNORECASE)
+
     return sql
 
 

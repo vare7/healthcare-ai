@@ -1,5 +1,7 @@
 """Streamlit UI: plain-English query -> dynamic table / KPI / chart render."""
 import sys
+from datetime import date, datetime
+from numbers import Number
 from pathlib import Path
 
 # Ensure project root is on path when running streamlit run streamlit_app.py
@@ -13,6 +15,19 @@ import plotly.express as px
 
 from backend.cache import query_with_cache
 from config.settings import DEMO_MODE
+
+
+def _format_metric_value(value):
+    """Return a Streamlit-safe metric value for numeric/date/text KPIs."""
+    if value is None:
+        return "N/A"
+    if isinstance(value, pd.Timestamp):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Number):
+        return value
+    return str(value)
 
 
 st.set_page_config(page_title="Healthcare AI Assistant", layout="wide")
@@ -60,7 +75,7 @@ df = pd.DataFrame(data)
 
 if result_type == "kpi":
     label = df.columns[0]
-    value = df.iloc[0, 0]
+    value = _format_metric_value(df.iloc[0, 0])
     st.metric(label=label, value=value)
 elif result_type == "bar_chart":
     x_col = chart_config.get("x_column", df.columns[0])

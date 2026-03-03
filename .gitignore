@@ -7,4 +7,6 @@ __pycache__/
 venv/
 chroma_data/
 audit_log.jsonl
+# Docker Compose override (optional)
+docker-compose.override.yml
 *.log

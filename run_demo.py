@@ -8,5 +8,6 @@ os.environ["DEMO_MODE"] = "1"
 from streamlit.web import cli as stcli
 
 if __name__ == "__main__":
-    sys.argv = ["streamlit", "run", "streamlit_app.py", "--server.headless", "true", "--server.port", "8502"]
+    port = os.environ.get("STREAMLIT_PORT", "8503")
+    sys.argv = ["streamlit", "run", "streamlit_app.py", "--server.headless", "true", "--server.port", port]
     sys.exit(stcli.main())

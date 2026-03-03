@@ -249,10 +249,14 @@ def _demo_response(question: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
-def query_with_cache(question: str, session_id: str = "") -> dict[str, Any]:
+def query_with_cache(
+    question: str,
+    session_id: str = "",
+    history: str = "",
+) -> dict[str, Any]:
     """
     1. Chroma  — skip LLM for nearly-identical questions.
-    2. LLM    — generate SQL.
+    2. LLM    — generate SQL (with conversation history for follow-ups).
     3. SQL cache — skip execution for same SQL.
     4. Execute — run query and fill both caches.
     """
@@ -291,7 +295,7 @@ def query_with_cache(question: str, session_id: str = "") -> dict[str, Any]:
 
     # ── Step 2: Generate SQL via LLM ──────────────────────────────────────
     try:
-        sql = generate_sql(question)
+        sql = generate_sql(question, history=history)
     except Exception as e:
         duration_ms = (time.time() - start) * 1000
         audit_log(

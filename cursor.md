@@ -19,16 +19,18 @@ Fully **local, privacy-first** AI assistant for healthcare staff: plain-English 
 
 ## Architecture (3 layers)
 
-1. **Text-to-SQL** — `backend/text_to_sql.py` uses LangChain + ChatOllama. LLM gets only schema string from `backend/schema.py`; outputs a single SELECT. `backend/sql_executor.py` validates (SELECT only, no forbidden keywords) and executes.
-2. **Rich UI** — `streamlit_app.py` calls `query_with_cache()`; response has `result_type` (`table` \| `kpi` \| `bar_chart` \| `line_chart`) and `chart_config`. UI renders table, `st.metric`, or Plotly chart accordingly.
-3. **Caching** — `backend/cache.py`: generate SQL → in-memory cache by normalized SQL → ChromaDB semantic cache by question embedding → on miss: execute, then fill both caches. Audit in `backend/audit.py` (JSONL, no PII).
+1. **Text-to-SQL** — `backend/text_to_sql.py` uses LangChain + ChatOllama. LLM gets schema string (with FK relationships) from `backend/schema.py`; outputs a single SELECT. Prompt includes domain semantics and few-shot examples. `backend/sql_guards.py` applies YAML-driven post-generation fixes. `backend/sql_executor.py` validates (SELECT only, no forbidden keywords) and executes.
+2. **Rich UI** — `streamlit_app.py` is a chat interface (`st.chat_message` / `st.chat_input`). Conversation history stored in `st.session_state`; `backend/memory.py` formats last N turns for the LLM so follow-ups like "now show that by month" work. Response has `result_type` (`table` \| `kpi` \| `bar_chart` \| `line_chart`) and `chart_config`. Users can override `result_type` via a selectbox.
+3. **Caching** — `backend/cache.py`: ChromaDB semantic cache by question embedding (cosine, checked BEFORE LLM) → generate SQL → in-memory cache by normalized SQL → on miss: execute, then fill both caches. Both layers respect `CACHE_TTL_SECONDS`. Audit in `backend/audit.py` (JSONL, no PII).
 
 ## Key files
 
 - **Entrypoints:** `streamlit_app.py` (main UI), `run_demo.py` (demo mode, port 8502)
 - **Config:** `config/settings.py` (env), `.env.example`. `DEMO_MODE` = mock responses without MySQL/Ollama.
-- **Orchestration:** `backend/query.py` — `run_query(question, sql=None)` (text-to-SQL → execute → result_metadata). `backend/cache.py` — `query_with_cache(question, session_id)` wraps that with cache + audit.
-- **Schema/DB:** `backend/schema.py` — `get_schema_string()` (read-only introspection). `backend/sql_executor.py` — `normalize_sql`, `validate_read_only`, `execute_select`.
+- **Orchestration:** `backend/query.py` — `run_query(question, sql=None)` (text-to-SQL → execute → result_metadata). `backend/cache.py` — `query_with_cache(question, session_id, history)` wraps that with cache + audit.
+- **Memory:** `backend/memory.py` — `format_history(turns)` formats last N Q/SQL/result_type turns into a compact context string for the LLM prompt.
+- **Schema/DB:** `backend/schema.py` — `get_schema_string()` (read-only introspection, includes FK relationships). `backend/sql_executor.py` — `normalize_sql`, `validate_read_only`, `execute_select`.
+- **SQL guards:** `backend/sql_guards.py` + `config/sql_guards.yaml` — YAML-driven post-generation SQL fixes (no Python changes needed for new rules).
 - **Result shaping:** `backend/result_metadata.py` — `get_result_metadata(rows)` → `(result_type, chart_config)` from row shape.
 - **Audit:** `backend/audit.py` — `log_query(...)` appends to `AUDIT_LOG_PATH` (JSONL).
 

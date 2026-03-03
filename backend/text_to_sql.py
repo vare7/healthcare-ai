@@ -38,7 +38,8 @@ SELECT DISTINCT d.name FROM visits v JOIN patients p ON v.patient_id = p.id JOIN
 
 Question: Show admissions by department
 SELECT d.name AS department, COUNT(*) AS admissions FROM visits v JOIN departments d ON v.department_id = d.id GROUP BY d.name;
-"""
+
+{history_block}"""
 
 USER_PROMPT = """Question: {question}"""
 
@@ -53,12 +54,7 @@ def _build_chain():
         model=OLLAMA_MODEL,
         temperature=0,
     )
-    return (
-        {"schema": RunnablePassthrough(), "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    return prompt | llm | StrOutputParser()
 
 
 _chain = None
@@ -71,17 +67,32 @@ def get_chain():
     return _chain
 
 
-def generate_sql(question: str, schema_string: str | None = None) -> str:
+def _build_history_block(history: str) -> str:
+    if not history:
+        return ""
+    return (
+        "Conversation so far (use this to resolve follow-up questions):\n"
+        + history
+    )
+
+
+def generate_sql(
+    question: str,
+    schema_string: str | None = None,
+    history: str = "",
+) -> str:
     """
     Generate a single SELECT statement from a natural language question.
-    Uses schema_string if provided; otherwise fetches from DB (read-only introspection).
+    Optionally receives formatted conversation history for follow-up resolution.
     """
     if schema_string is None:
         schema_string = get_schema_string()
     chain = get_chain()
-    # Chain expects two inputs; we pass same question for both slots and override schema in prompt
-    # Actually our prompt has {schema} and {question} - so we need to invoke with dict
-    result = chain.invoke({"schema": schema_string, "question": question})
+    result = chain.invoke({
+        "schema": schema_string,
+        "question": question,
+        "history_block": _build_history_block(history),
+    })
     sql = _extract_sql(result)
     sql = apply_guards(question, sql)
     return sql

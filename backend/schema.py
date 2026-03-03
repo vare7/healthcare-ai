@@ -27,7 +27,7 @@ def get_connection():
 def get_schema_string(database: Optional[str] = None) -> str:
     """
     Query information_schema for the given database and return a concise
-    schema string (tables, columns, types). No row data.
+    schema string (tables, columns, types, foreign keys). No row data.
     """
     db = database or MYSQL_DATABASE
     conn = get_connection()
@@ -42,13 +42,31 @@ def get_schema_string(database: Optional[str] = None) -> str:
                 """,
                 (db,),
             )
-            rows = cur.fetchall()
+            col_rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT TABLE_NAME, COLUMN_NAME,
+                       REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+                FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = %s
+                  AND REFERENCED_TABLE_NAME IS NOT NULL
+                """,
+                (db,),
+            )
+            fk_rows = cur.fetchall()
     finally:
         conn.close()
 
-    # Group by table
+    # FK lookup: (table, column) -> "references TABLE(COLUMN)"
+    fk_map: dict[tuple[str, str], str] = {}
+    for fk in fk_rows:
+        key = (fk["TABLE_NAME"], fk["COLUMN_NAME"])
+        fk_map[key] = f"references {fk['REFERENCED_TABLE_NAME']}({fk['REFERENCED_COLUMN_NAME']})"
+
+    # Group columns by table
     tables: dict[str, list[dict]] = {}
-    for r in rows:
+    for r in col_rows:
         t = r["TABLE_NAME"]
         if t not in tables:
             tables[t] = []
@@ -63,6 +81,12 @@ def get_schema_string(database: Optional[str] = None) -> str:
     parts = []
     for table_name in sorted(tables.keys()):
         cols = tables[table_name]
-        col_strs = [f"{c['name']} ({c['type']})" for c in cols]
+        col_strs = []
+        for c in cols:
+            s = f"{c['name']} ({c['type']})"
+            fk_ref = fk_map.get((table_name, c["name"]))
+            if fk_ref:
+                s += f" [{fk_ref}]"
+            col_strs.append(s)
         parts.append(f"Table {table_name}: {', '.join(col_strs)}")
     return "; ".join(parts)

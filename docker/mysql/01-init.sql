@@ -20,14 +20,16 @@ CREATE TABLE IF NOT EXISTS patients (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Appointments
+-- Appointments (department_id = which department the appointment is with)
 CREATE TABLE IF NOT EXISTS appointments (
   id INT PRIMARY KEY AUTO_INCREMENT,
   patient_id INT NOT NULL,
+  department_id INT NULL,
   scheduled_at DATETIME NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (patient_id) REFERENCES patients(id)
+  FOREIGN KEY (patient_id) REFERENCES patients(id),
+  FOREIGN KEY (department_id) REFERENCES departments(id)
 );
 
 -- Visits (admissions / encounters by department)
@@ -58,12 +60,12 @@ INSERT INTO patients (first_name, last_name, date_of_birth) VALUES
   ('Sarah', 'Wilson', '1982-09-14'),
   ('James', 'Brown', '1988-04-05');
 
-INSERT INTO appointments (patient_id, scheduled_at, status) VALUES
-  (1, '2025-03-10 09:00:00', 'completed'),
-  (2, '2025-03-11 10:30:00', 'scheduled'),
-  (3, '2025-03-12 14:00:00', 'cancelled'),
-  (1, '2025-03-15 11:00:00', 'scheduled'),
-  (4, '2025-03-16 08:00:00', 'scheduled');
+INSERT INTO appointments (patient_id, department_id, scheduled_at, status) VALUES
+  (1, 1, '2025-03-10 09:00:00', 'completed'),
+  (2, 2, '2025-03-11 10:30:00', 'scheduled'),
+  (3, 1, '2025-03-12 14:00:00', 'cancelled'),
+  (1, 1, '2025-03-15 11:00:00', 'scheduled'),
+  (4, 3, '2025-03-16 08:00:00', 'scheduled');
 
 INSERT INTO visits (patient_id, department_id, visit_date, notes) VALUES
   (1, 1, '2025-01-15', 'Routine checkup'),

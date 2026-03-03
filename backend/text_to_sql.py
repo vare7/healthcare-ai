@@ -16,6 +16,20 @@ Rules:
 
 Schema:
 {schema}
+
+Semantics:
+- "Admitted", "admissions", "encounters" mean the visits table (visit_date = when the visit happened). Use visits.visit_date for time filters like "last week", "last month".
+- "Last week" = visits where visit_date is within the past 7 days, e.g. visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY).
+- "Appointments" = scheduled future or past appointments (appointments table, scheduled_at). Do not use appointments for "how many admitted" unless the question explicitly asks about appointments.
+- Department names are ONLY in departments.name. To get a department name from visits or appointments, JOIN on department_id = departments.id.
+- Patient names are in patients.first_name and patients.last_name. To get a patient name from visits or appointments, JOIN on patient_id = patients.id.
+
+Examples:
+Question: How many patients were admitted last week?
+SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY);
+
+Question: What department did Jane Doe visit?
+SELECT DISTINCT d.name FROM visits v JOIN patients p ON v.patient_id = p.id JOIN departments d ON v.department_id = d.id WHERE p.first_name = 'Jane' AND p.last_name = 'Doe';
 """
 
 USER_PROMPT = """Question: {question}"""
@@ -62,6 +76,9 @@ def generate_sql(question: str, schema_string: str | None = None) -> str:
     result = chain.invoke({"schema": schema_string, "question": question})
     # Extract only the SQL (in case LLM adds markdown or explanation)
     sql = _extract_sql(result)
+    # Override: "admitted last week" etc. must use visits + visit_date, not appointments join
+    if _is_admitted_in_period_question(question) and _is_wrong_admissions_sql(sql):
+        sql = _sql_for_admitted_last_week(question)
     return sql
 
 
@@ -79,3 +96,32 @@ def _extract_sql(text: str) -> str:
     if text.upper().startswith("SELECT"):
         return text
     return text
+
+
+def _is_admitted_in_period_question(question: str) -> bool:
+    """True if question is asking how many patients were admitted in a time window."""
+    q = question.lower()
+    if "admitted" not in q and "admission" not in q:
+        return False
+    time_phrases = ("last week", "past week", "last 7 days", "past 7 days",
+                    "last month", "past month", "last 30 days", "yesterday")
+    return any(p in q for p in time_phrases)
+
+
+def _is_wrong_admissions_sql(sql: str) -> bool:
+    """True if SQL counts via appointments+visits join instead of visits with date filter."""
+    sql_upper = sql.upper()
+    # Wrong: joins appointments and visits for a count (no visit_date time filter)
+    has_join = "APPOINTMENTS" in sql_upper and "VISITS" in sql_upper and ("JOIN" in sql_upper or "INNER JOIN" in sql_upper)
+    has_count = "COUNT" in sql_upper
+    missing_date_filter = "VISIT_DATE" not in sql_upper or ("DATE_SUB" not in sql_upper and "INTERVAL" not in sql_upper)
+    return has_join and has_count and missing_date_filter
+
+
+def _sql_for_admitted_last_week(question: str) -> str:
+    """Return correct SQL for 'how many patients admitted in [period]'."""
+    q = question.lower()
+    if "last month" in q or "past month" in q or "last 30 days" in q:
+        return "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)"
+    # Default: last week / past 7 days
+    return "SELECT COUNT(DISTINCT patient_id) FROM visits WHERE visit_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)"

@@ -37,6 +37,7 @@ services:
     volumes:
       - ./docker/mysql/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
       - ./docker/mysql/02-readonly-user.sql:/docker-entrypoint-initdb.d/02-readonly-user.sql:ro
+      - ./docker/mysql/03-seed-100.sql:/docker-entrypoint-initdb.d/03-seed-100.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
       interval: 5s

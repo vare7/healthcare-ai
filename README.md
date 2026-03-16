@@ -17,4 +17,5 @@ Fully local, privacy-first AI assistant for healthcare staff to query data in pl
 - **Examples** – see `docs/examples/example-questions.md` for curated natural-language queries.
 - **Architecture (full stack)** – `docs/architecture.md` (services, containers, components).
 - **Architecture (pipeline & data flow)** – `docs/architecture-data-flow.md` (UI → caches → LLM → DB → charts).
+- **Project context** – `docs/project-context.md` for high-level architecture, modules, and conventions.
 

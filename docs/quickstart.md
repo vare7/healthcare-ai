@@ -86,3 +86,5 @@ For a fully local demo that does not require MySQL or Ollama:
 
 In demo mode, responses come from mock data in `backend/cache.py` and no external services are required.
 
+For a deeper overview of the architecture, key modules, and conventions, see `docs/project-context.md`.
+
